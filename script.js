@@ -191,6 +191,7 @@ function resetMasterPassword() {
     localStorage.removeItem('clavis_encrypted');
     localStorage.removeItem('clavis_biometric_enabled');
     localStorage.removeItem('clavis_biometric_credential');
+    localStorage.removeItem('clavis_shares');
     location.reload();
   }
 }
@@ -265,8 +266,18 @@ installBtn.addEventListener('click', async () => {
   else { if (isIOS()) iosGuide.style.display = 'block'; else alert(currentLang === 'ar' ? 'يمكنك تثبيت التطبيق من قائمة المتصفح.' : 'You can install from browser menu.'); }
 });
 iosGuide.addEventListener('click', () => iosGuide.style.display = 'none');
+
+// تسجيل Service Worker
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register('/clavis/sw.js').then(() => console.log('SW registered')).catch(() => console.log('SW failed')); });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/clavis/sw.js')
+      .then(registration => {
+        console.log('✅ Service Worker registered with scope:', registration.scope);
+      })
+      .catch(error => {
+        console.log('❌ Service Worker registration failed:', error);
+      });
+  });
 }
 
 // ========== المتغيرات العامة ==========
@@ -280,6 +291,7 @@ let editingId = null;
 let totpSecret = 'JBSWY3DPEHPK3PXP';
 let totpInterval = null;
 let qrStream = null;
+let pwVisible = {};
 
 const UPPER = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const LOWER = 'abcdefghijklmnopqrstuvwxyz';
@@ -607,36 +619,168 @@ function performAudit() {
 }
 window.focusEntry = (name) => { switchTab('vault'); document.getElementById('searchInput').value = name; renderVault(); };
 
-// ========== Vault ==========
+// ========== Vault (مع جميع ميزات 2in1) ==========
+function toggleEntry(id) {
+  const body = document.getElementById(`entry-body-${id}`);
+  if (body) body.classList.toggle('open');
+}
+
+function togglePwVis(id) {
+  const e = entries.find(x => x.id === id);
+  if (!e) return;
+  pwVisible[id] = !pwVisible[id];
+  const dispEl = document.getElementById(`pwdisp-${id}`);
+  const eyeBtn = document.getElementById(`eyebtn-${id}`);
+  if (dispEl) dispEl.textContent = pwVisible[id] ? e.pw : '●'.repeat(Math.min(e.pw.length, 16));
+  if (eyeBtn) eyeBtn.innerHTML = pwVisible[id] ? '<i class="fa-regular fa-eye-slash"></i>' : '<i class="fa-regular fa-eye"></i>';
+}
+
+function editEntry(id) {
+  const e = entries.find(x => x.id === id);
+  if (!e) return;
+  editingId = id;
+  document.getElementById('modalPwPreview').textContent = e.pw;
+  document.getElementById('f-name').value = e.name || '';
+  document.getElementById('f-user').value = e.user || '';
+  document.getElementById('f-note').value = e.note || '';
+  document.getElementById('f-cat').value = e.cat || 'مواقع';
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
 function renderVault() {
   const q = document.getElementById('searchInput').value.trim().toLowerCase();
   const cat = document.getElementById('filterCat').value;
-  let filtered = entries.filter(e => { const matchQ = !q || e.name.toLowerCase().includes(q) || (e.user || '').toLowerCase().includes(q); const matchC = !cat || e.cat === cat; return matchQ && matchC; });
+  let filtered = entries.filter(e => {
+    const matchQ = !q || (e.name || '').toLowerCase().includes(q) || (e.user || '').toLowerCase().includes(q);
+    const matchC = !cat || e.cat === cat;
+    return matchQ && matchC;
+  });
   const list = document.getElementById('entriesList');
-  if (filtered.length === 0) { list.innerHTML = `<div class="empty-state"><div class="empty-icon"><i class="fa-solid fa-lock"></i></div><h3>الخزينة فارغة</h3><p>ولّد كلمة مرور واحفظها!</p></div>`; return; }
-  list.innerHTML = filtered.map(e => { const m = CAT_META[e.cat] || CAT_META['أخرى']; return `<div class="entry-card"><div class="entry-top"><div class="entry-icon" style="background:${m.bg}; color:${m.color}">${m.icon}</div><div class="entry-info"><div class="entry-name">${escHtml(e.name)}</div><div class="entry-user">${escHtml(e.user || '—')}</div></div><div class="entry-actions"><button class="icon-btn" onclick="copyEntry(${e.id})"><i class="fa-regular fa-copy"></i></button><button class="icon-btn share-btn" onclick="openShareModal(${e.id})"><i class="fa-solid fa-share-nodes"></i></button><button class="icon-btn" onclick="deleteEntry(${e.id})" style="color:var(--danger);"><i class="fa-regular fa-trash-can"></i></button></div></div></div>`; }).join('');
+  
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon"><i class="fa-solid fa-lock"></i></div><h3>الخزينة فارغة</h3><p>ولّد كلمة مرور واحفظها!</p></div>`;
+    updateHeaderStats();
+    return;
+  }
+  
+  list.innerHTML = filtered.map(e => {
+    const m = CAT_META[e.cat] || CAT_META['أخرى'];
+    const createdDate = e.created ? new Date(e.created).toLocaleDateString('ar-SA', { year:'numeric', month:'short', day:'numeric' }) : '—';
+    const updatedDate = e.updated ? new Date(e.updated).toLocaleDateString('ar-SA', { year:'numeric', month:'short', day:'numeric' }) : '—';
+    const pwLength = e.pw ? e.pw.length : 0;
+    const strength = getPasswordStrength(e.pw);
+    
+    return `<div class="entry-card">
+      <div class="entry-top">
+        <div class="entry-icon" style="background:${m.bg}; color:${m.color}">${m.icon}</div>
+        <div class="entry-info">
+          <div class="entry-name">${escHtml(e.name || '—')}</div>
+          <div class="entry-user">${escHtml(e.user || '—')}</div>
+          <div class="cat-badge" style="display:inline-block; margin-top:6px; padding:3px 10px; background:${m.bg}; color:${m.color}; border-radius:20px; font-size:11px;">
+            ${m.icon} ${e.cat || 'أخرى'}
+            <span style="margin:0 5px;">•</span>
+            <span style="color:${strength.color};">${strength.text}</span>
+          </div>
+        </div>
+        <div class="entry-actions">
+          <button class="icon-btn" onclick="toggleEntry(${e.id})" title="عرض التفاصيل"><i class="fa-regular fa-eye"></i></button>
+          <button class="icon-btn" onclick="copyEntry(${e.id})" title="نسخ"><i class="fa-regular fa-copy"></i></button>
+          <button class="icon-btn share-btn" onclick="openShareModal(${e.id})" title="مشاركة"><i class="fa-solid fa-share-nodes"></i></button>
+          <button class="icon-btn" onclick="editEntry(${e.id})" title="تعديل"><i class="fa-regular fa-pen-to-square"></i></button>
+          <button class="icon-btn" onclick="deleteEntry(${e.id})" style="color:var(--danger);" title="حذف"><i class="fa-regular fa-trash-can"></i></button>
+        </div>
+      </div>
+      
+      <div class="entry-body" id="entry-body-${e.id}" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+        <div class="pw-row" style="display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px;">
+          <div class="pw-masked" id="pwdisp-${e.id}" style="flex:1; font-family:monospace; font-size:15px; color:var(--accent); direction:ltr; text-align:left;">${'●'.repeat(Math.min(pwLength, 16))}</div>
+          <button class="icon-btn" id="eyebtn-${e.id}" onclick="togglePwVis(${e.id})"><i class="fa-regular fa-eye"></i></button>
+          <button class="icon-btn" onclick="copyEntry(${e.id})"><i class="fa-regular fa-copy"></i></button>
+        </div>
+        
+        <div class="entry-meta" style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+          <div class="meta-item" style="background:var(--surface); border-radius:8px; padding:10px;">
+            <div class="meta-key" style="font-size:10px; color:var(--text3);">الطول</div>
+            <div class="meta-val" style="font-size:13px; color:var(--text2);">${pwLength} حرف</div>
+          </div>
+          <div class="meta-item" style="background:var(--surface); border-radius:8px; padding:10px;">
+            <div class="meta-key" style="font-size:10px; color:var(--text3);">تاريخ الإضافة</div>
+            <div class="meta-val" style="font-size:13px; color:var(--text2);">${createdDate}</div>
+          </div>
+          ${e.updated ? `
+          <div class="meta-item" style="background:var(--surface); border-radius:8px; padding:10px;">
+            <div class="meta-key" style="font-size:10px; color:var(--text3);">آخر تحديث</div>
+            <div class="meta-val" style="font-size:13px; color:var(--text2);">${updatedDate}</div>
+          </div>
+          ` : ''}
+          ${e.note ? `
+          <div class="meta-item" style="grid-column:1/-1; background:var(--surface); border-radius:8px; padding:10px;">
+            <div class="meta-key" style="font-size:10px; color:var(--text3);">ملاحظة</div>
+            <div class="meta-val" style="font-size:13px; color:var(--text2);">${escHtml(e.note)}</div>
+          </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  
+  updateHeaderStats();
 }
+
+function getPasswordStrength(pw) {
+  if (!pw) return { text: '—', color: 'var(--text3)' };
+  let score = 0;
+  if (pw.length >= 8) score++; if (pw.length >= 12) score++; if (pw.length >= 16) score++;
+  if (/[A-Z]/.test(pw)) score++; if (/[a-z]/.test(pw)) score++; if (/[0-9]/.test(pw)) score++; if (/[^A-Za-z0-9]/.test(pw)) score += 2;
+  if (score <= 2) return { text: 'ضعيفة', color: 'var(--danger)' };
+  if (score <= 4) return { text: 'متوسطة', color: 'var(--warn)' };
+  return { text: 'قوية', color: 'var(--success)' };
+}
+
 async function copyEntry(id) { const e = entries.find(x => x.id === id); if (!e) return; try { await navigator.clipboard.writeText(e.pw); toast('<i class="fa-solid fa-check"></i> تم النسخ!'); } catch { toast('<i class="fa-solid fa-triangle-exclamation"></i> تعذّر النسخ'); } }
+
 function deleteEntry(id) { if (!confirm('حذف كلمة المرور؟')) return; entries = entries.filter(e => e.id !== id); appData.entries = entries; saveAllData(); renderVault(); updateHeaderStats(); toast('<i class="fa-regular fa-trash-can"></i> تم الحذف'); }
-function updateHeaderStats() { document.getElementById('totalCount').textContent = entries.length; }
+
+function updateHeaderStats() { 
+  document.getElementById('totalCount').textContent = entries.length; 
+}
+
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 function openSaveModal() {
   if (!currentPw) { toast('<i class="fa-solid fa-triangle-exclamation"></i> ولّد رمزاً أولاً!'); return; }
   document.getElementById('modalPwPreview').textContent = currentPw;
-  document.getElementById('f-name').value = document.getElementById('f-user').value = document.getElementById('f-note').value = '';
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-user').value = '';
+  document.getElementById('f-note').value = '';
   document.getElementById('f-cat').value = 'مواقع';
   editingId = null;
   document.getElementById('modalOverlay').classList.add('open');
 }
+
 function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
 function closeModalOutside(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+
 function saveEntry() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { toast('<i class="fa-solid fa-triangle-exclamation"></i> أدخل اسم الموقع!'); return; }
   const pw = document.getElementById('modalPwPreview').textContent;
-  const entry = { id: editingId || Date.now(), name, user: document.getElementById('f-user').value.trim(), pw, cat: document.getElementById('f-cat').value, note: document.getElementById('f-note').value.trim(), created: editingId ? (entries.find(e=>e.id===editingId)?.created || Date.now()) : Date.now(), updated: Date.now() };
-  if (editingId) { const idx = entries.findIndex(e => e.id === editingId); if (idx !== -1) entries[idx] = entry; }
-  else entries.unshift(entry);
+  const entry = {
+    id: editingId || Date.now(),
+    name,
+    user: document.getElementById('f-user').value.trim(),
+    pw,
+    cat: document.getElementById('f-cat').value,
+    note: document.getElementById('f-note').value.trim(),
+    created: editingId ? (entries.find(e => e.id === editingId)?.created || Date.now()) : Date.now(),
+    updated: Date.now()
+  };
+  if (editingId) {
+    const idx = entries.findIndex(e => e.id === editingId);
+    if (idx !== -1) entries[idx] = entry;
+  } else {
+    entries.unshift(entry);
+  }
   appData.entries = entries;
   saveAllData();
   closeModal();
@@ -644,6 +788,7 @@ function saveEntry() {
   updateHeaderStats();
   renderVault();
 }
+
 let toastTimer;
 function toast(msg) { clearTimeout(toastTimer); const el = document.getElementById('toast'); el.innerHTML = msg; el.classList.add('show'); toastTimer = setTimeout(() => el.classList.remove('show'), 2500); }
 
@@ -658,6 +803,16 @@ document.getElementById('changeMasterBtn').addEventListener('click', openChangeM
 document.getElementById('scanQRBtn').addEventListener('click', startQRScanner);
 document.getElementById('totpSecret').addEventListener('input', function() { totpSecret = this.value; appData.settings.totpSecret = totpSecret; saveAllData(); if (currentType === 'totp') generateTOTP(); });
 document.getElementById('langToggle').addEventListener('click', function() { currentLang = currentLang === 'ar' ? 'en' : 'ar'; document.documentElement.lang = currentLang; document.documentElement.dir = currentLang === 'ar' ? 'rtl' : 'ltr'; updateLanguage(); });
+
+// ========== دوال عامة ==========
+window.toggleEntry = toggleEntry;
+window.togglePwVis = togglePwVis;
+window.editEntry = editEntry;
+window.copyEntry = copyEntry;
+window.deleteEntry = deleteEntry;
+window.openShareModal = openShareModal;
+window.copyShareUrl = copyShareUrl;
+window.cancelShare = cancelShare;
 
 // ========== بدء التشغيل ==========
 updateLanguage();
