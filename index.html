@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, shrink-to-fit=no, viewport-fit=cover">
+  
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#00d4aa">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Clavis">
+  <link rel="apple-touch-icon" href="icon.svg">
+
+  <title>Clavis | مدير كلمات المرور الأسطوري</title>
+  
+  <!-- الخطوط -->
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- مكتبات خارجية -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/otpauth/9.2.2/otpauth.umd.min.js"></script>
+  <script src="https://unpkg.com/jsqr/dist/jsQR.js"></script>
+  
+  <!-- ملفاتنا -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- ========== شاشة القفل ========== -->
+  <div class="lock-screen" id="lockScreen">
+    <div class="lock-card">
+      <div class="lock-icon"><i class="fa-solid fa-lock"></i></div>
+      <h2 id="lockTitle">مرحباً بك في Clavis</h2>
+      <p id="lockDesc">أدخل كلمة المرور الرئيسية لفتح التطبيق</p>
+      <input type="password" class="lock-input" id="masterPasswordInput" placeholder="كلمة المرور الرئيسية" autocomplete="off">
+      <button class="lock-btn" id="unlockBtn"><i class="fa-solid fa-unlock"></i> <span id="unlockText">فتح</span></button>
+      <button class="lock-btn biometric" id="biometricUnlockBtn" style="display:none;"><i class="fa-solid fa-fingerprint"></i> <span id="biometricText">فتح بالبصمة</span></button>
+      <button class="lock-btn secondary" id="resetMasterBtn" style="display:none;"><i class="fa-solid fa-arrow-rotate-left"></i> <span id="resetText">إعادة تعيين</span></button>
+      <div class="lock-error" id="lockError"></div>
+      <div class="lock-footer"><a id="forgotPasswordLink" style="display:none;">نسيت كلمة المرور؟</a></div>
+    </div>
+  </div>
+
+  <!-- ========== التطبيق الرئيسي ========== -->
+  <div class="app" id="mainApp">
+    <!-- شريط العنوان -->
+    <div class="top-bar">
+      <div class="logo">
+        <div class="logo-icon"><i class="fa-solid fa-key"></i></div>
+        <div class="logo-text">
+          <h1 id="logoTitle">Clavis</h1>
+          <p id="logoSub">مدير كلمات المرور الأسطوري</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="biometric-status-btn" id="enableBiometricBtn" title="تفعيل فتح البصمة" style="display:none;"><i class="fa-solid fa-fingerprint"></i> <span id="enableBiometricText">تفعيل البصمة</span></button>
+        <button class="lock-status-btn" id="changeMasterBtn" title="تغيير كلمة المرور الرئيسية"><i class="fa-solid fa-key"></i> <span id="changeMasterText">تغيير</span></button>
+        <button class="install-btn" id="installBtn" style="display:none;"><i class="fas fa-download"></i> <span id="installText">تثبيت</span></button>
+        <button class="lang-btn" id="langToggle"><i class="fas fa-language"></i> <span id="langText">English</span></button>
+        <div class="header-stats"><div class="hstat"><div class="hstat-n" id="totalCount">0</div><div class="hstat-l" id="statLabel">كلمة مرور</div></div></div>
+      </div>
+    </div>
+
+    <!-- دليل تثبيت iOS -->
+    <div id="iosInstallGuide" class="install-guide">
+      <i class="fa-solid fa-arrow-up-from-bracket"></i>
+      <p>لتثبيت Clavis على هاتفك:</p>
+      <p>1. اضغط على زر <strong>مشاركة</strong> <i class="fa-solid fa-arrow-up-from-bracket"></i> في الأسفل.</p>
+      <p>2. اختر <strong>"إضافة إلى الشاشة الرئيسية"</strong>.</p>
+      <p>3. اضغط <strong>"إضافة"</strong>.</p>
+    </div>
+
+    <!-- التبويبات -->
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('gen')"><i class="fa-solid fa-wand-magic-sparkles"></i> <span id="tabGen">توليد</span></button>
+      <button class="tab" onclick="switchTab('analyzer')"><i class="fa-solid fa-shield-halved"></i> <span id="tabAnalyzer">فحص الأمان</span></button>
+      <button class="tab" onclick="switchTab('audit')"><i class="fa-solid fa-chart-simple"></i> <span id="tabAudit">تدقيق</span></button>
+      <button class="tab" onclick="switchTab('vault')"><i class="fa-solid fa-database"></i> <span id="tabVault">الخزينة</span></button>
+    </div>
+
+    <!-- ========== قسم المولد ========== -->
+    <div class="section active" id="sec-gen">
+      <div class="card">
+        <div class="card-title"><i class="fa-solid fa-key"></i> <span id="genTitle">مولد الأساطير</span></div>
+        
+        <div class="type-selector">
+          <button class="type-btn active" data-type="password" onclick="setType('password')"><i class="fa-solid fa-key"></i> <span id="typePass">كلمة مرور</span></button>
+          <button class="type-btn" data-type="passphrase" onclick="setType('passphrase')"><i class="fa-solid fa-language"></i> <span id="typePhrase">عبارة مرور</span></button>
+          <button class="type-btn" data-type="pin" onclick="setType('pin')"><i class="fa-solid fa-hashtag"></i> <span id="typePin">PIN</span></button>
+          <button class="type-btn" data-type="totp" onclick="setType('totp')"><i class="fa-solid fa-clock"></i> <span id="typeTOTP">2FA</span></button>
+        </div>
+
+        <div class="secret-input-wrapper" id="secretInputWrapper">
+          <label><i class="fa-solid fa-key"></i> <span id="secretLabel">المفتاح السري (Secret Key)</span></label>
+          <input type="text" id="totpSecret" placeholder="مثال: JBSWY3DPEHPK3PXP" value="JBSWY3DPEHPK3PXP">
+          <div class="secret-hint" id="secretHint">أدخل المفتاح السري من حسابك (Base32)</div>
+          <div class="qr-scanner-btn" id="scanQRBtn"><i class="fa-solid fa-qrcode"></i> <span id="scanQRText">مسح QR Code</span></div>
+          <video id="qrVideo" class="qr-video" autoplay playsinline></video>
+        </div>
+
+        <div class="totp-display" id="totpDisplay" style="display:none;">
+          <div class="totp-code" id="totpCode">000000</div>
+          <div class="totp-timer"><span class="timer-text" id="timerText">30s</span><div class="timer-bar"><div class="timer-fill" id="timerFill"></div></div></div>
+        </div>
+
+        <div class="pw-output" id="pwOutput">
+          <div class="pw-text" id="genPw">اضغط توليد...</div>
+          <div class="pw-actions">
+            <button class="icon-btn" onclick="copyGen()"><i class="fa-regular fa-copy"></i></button>
+            <button class="icon-btn" onclick="generatePassword()"><i class="fa-solid fa-rotate"></i></button>
+            <button class="icon-btn" onclick="openSaveModal()"><i class="fa-regular fa-floppy-disk"></i></button>
+          </div>
+        </div>
+
+        <div id="strengthSection">
+          <div class="strength-bar-wrap"><div class="strength-labels"><span class="strength-label" id="strengthLabel">قوة كلمة المرور</span><span class="strength-name" id="strengthName">—</span></div><div class="strength-bar"><div class="strength-fill" id="strengthFill"></div></div></div>
+          <div class="crack-time" id="crackTime"><i class="fa-regular fa-clock"></i> <span id="crackText">وقت الاختراق: —</span></div>
+        </div>
+
+        <div id="optionsSection">
+          <div class="slider-row" id="lengthRow"><div class="slider-label"><span id="lengthLabel">الطول</span><span class="slider-val" id="lenLabel">16</span></div><input type="range" id="lenSlider" min="4" max="64" value="16" oninput="updateLenLabel()"></div>
+          <div class="options-grid" id="optionsGrid">
+            <div class="option-item checked" id="opt-upper" onclick="toggleOpt(this,'upper')"><span class="option-label" id="optUpper">أحرف كبيرة</span><div class="toggle"></div></div>
+            <div class="option-item checked" id="opt-lower" onclick="toggleOpt(this,'lower')"><span class="option-label" id="optLower">أحرف صغيرة</span><div class="toggle"></div></div>
+            <div class="option-item checked" id="opt-num" onclick="toggleOpt(this,'num')"><span class="option-label" id="optNumbers">أرقام</span><div class="toggle"></div></div>
+            <div class="option-item" id="opt-sym" onclick="toggleOpt(this,'sym')"><span class="option-label" id="optSymbols">رموز</span><div class="toggle"></div></div>
+            <div class="option-item" id="opt-nosim" onclick="toggleOpt(this,'nosim')"><span class="option-label" id="optAvoid">تجنب المتشابهة</span><div class="toggle"></div></div>
+          </div>
+        </div>
+
+        <div id="platformSection">
+          <div class="platform-selector">
+            <button class="platform-btn active" data-platform="all" onclick="setPlatform('all')"><i class="fa-solid fa-infinity"></i> <span id="platAll">كل الرموز</span></button>
+            <button class="platform-btn" data-platform="web" onclick="setPlatform('web')"><i class="fa-solid fa-globe"></i> <span id="platWeb">مواقع</span></button>
+            <button class="platform-btn" data-platform="windows" onclick="setPlatform('windows')"><i class="fa-brands fa-windows"></i> Windows</button>
+            <button class="platform-btn" data-platform="bank" onclick="setPlatform('bank')"><i class="fa-solid fa-building-columns"></i> <span id="platBank">بنوك</span></button>
+            <button class="platform-btn" data-platform="mobile" onclick="setPlatform('mobile')"><i class="fa-solid fa-mobile-screen"></i> <span id="platMobile">جوال</span></button>
+            <button class="platform-btn" data-platform="simple" onclick="setPlatform('simple')"><i class="fa-solid fa-font"></i> <span id="platSimple">بسيط</span></button>
+          </div>
+          <div class="platform-note" id="platformNote">جميع الرموز متاحة</div>
+        </div>
+
+        <button class="btn-primary" id="generateBtn" onclick="generatePassword()"><i class="fa-solid fa-bolt"></i> <span id="genBtnText">توليد</span></button>
+
+        <div class="history-box"><div class="history-title"><i class="fa-regular fa-clock-rotate-left"></i> <span id="historyTitle">آخر 5 رموز</span></div><div class="history-list" id="historyList"></div></div>
+      </div>
+    </div>
+
+    <!-- ========== قسم فاحص الأمان ========== -->
+    <div class="section" id="sec-analyzer">
+      <div class="card">
+        <div class="card-title"><i class="fa-solid fa-shield"></i> <span id="analyzerTitle">فحص كلمة المرور</span></div>
+        <input type="text" class="analyzer-input" id="analyzerInput" placeholder="اكتب كلمة المرور للفحص..." oninput="analyzePassword()" autocomplete="off">
+        <div class="analyzer-result" id="analyzerResult">
+          <div class="score-display"><div class="score-number" id="analyzerScore">—</div><div class="score-label" id="analyzerRating">—</div></div>
+          <div class="analyzer-details" id="analyzerDetails"></div>
+          <p style="font-size:11px; color:var(--text3); margin-top:12px; text-align:center;" id="analyzerNote">🔒 التحليل محلي 100% - لا يرسل بيانات</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== قسم التدقيق الأمني ========== -->
+    <div class="section" id="sec-audit">
+      <div class="card">
+        <div class="card-title"><i class="fa-solid fa-chart-simple"></i> <span id="auditTitle">التدقيق الأمني</span></div>
+        <div class="audit-summary" id="auditSummary">
+          <div class="audit-stat"><div class="audit-stat-value" id="auditTotal">0</div><div class="audit-stat-label" id="auditTotalLabel">كلمة مرور</div></div>
+          <div class="audit-stat"><div class="audit-stat-value danger" id="auditWeak">0</div><div class="audit-stat-label" id="auditWeakLabel">ضعيفة</div></div>
+          <div class="audit-stat"><div class="audit-stat-value warning" id="auditReused">0</div><div class="audit-stat-label" id="auditReusedLabel">مكررة</div></div>
+          <div class="audit-stat"><div class="audit-stat-value warning" id="auditOld">0</div><div class="audit-stat-label" id="auditOldLabel">قديمة</div></div>
+        </div>
+        <div class="audit-section-title"><i class="fa-solid fa-triangle-exclamation" style="color: var(--warn);"></i> <span id="auditIssuesTitle">مشاكل تحتاج انتباه</span></div>
+        <div class="audit-list" id="auditList"></div>
+        <div class="audit-recommendations"><div class="audit-section-title"><i class="fa-solid fa-lightbulb" style="color: var(--accent);"></i> <span id="recommendationsTitle">توصيات للتحسين</span></div><div id="recommendationsList"></div></div>
+      </div>
+    </div>
+
+    <!-- ========== قسم الخزينة ========== -->
+    <div class="section" id="sec-vault">
+      <div class="search-row">
+        <div class="search-wrap"><span class="search-icon"><i class="fa-solid fa-magnifying-glass"></i></span><input type="text" placeholder="بحث في الخزينة..." id="searchInput" oninput="renderVault()"></div>
+        <select class="filter-select" id="filterCat" onchange="renderVault()"><option value="">الكل</option><option value="مواقع">🌐 مواقع</option><option value="تطبيقات">📱 تطبيقات</option><option value="بريد">📧 بريد</option><option value="بنوك">🏦 بنوك</option><option value="أخرى">📁 أخرى</option></select>
+      </div>
+      
+      <div class="export-import-btns">
+        <button class="icon-btn" onclick="exportData()"><i class="fa-solid fa-download"></i> <span id="exportText">تصدير مشفر</span></button>
+        <button class="icon-btn" onclick="importData()"><i class="fa-solid fa-upload"></i> <span id="importText">استيراد مشفر</span></button>
+        <input type="file" id="fileInput" accept=".json,.clavis" style="display:none;">
+      </div>
+      
+      <div class="entries-list" id="entriesList"></div>
+      <div class="active-shares-section" id="activeSharesSection"><div class="active-shares-title"><i class="fa-solid fa-share-nodes" style="color: var(--accent);"></i> <span id="activeSharesTitle">المشاركات النشطة</span></div><div class="active-shares-list" id="activeSharesList"></div></div>
+    </div>
+  </div>
+
+  <!-- ========== النوافذ المنبثقة ========== -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModalOutside(event)">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-regular fa-floppy-disk"></i> حفظ كلمة المرور</div>
+      <div class="modal-pw-preview" id="modalPwPreview"></div>
+      <div class="field"><label>اسم الموقع / التطبيق *</label><input type="text" id="f-name" placeholder="مثال: Google, Instagram"></div>
+      <div class="field"><label>اسم المستخدم / البريد</label><input type="text" id="f-user" placeholder="user@example.com"></div>
+      <div class="field"><label>الفئة</label><select id="f-cat"><option value="مواقع">🌐 مواقع</option><option value="تطبيقات">📱 تطبيقات</option><option value="بريد">📧 بريد</option><option value="بنوك">🏦 بنوك</option><option value="أخرى">📁 أخرى</option></select></div>
+      <div class="field"><label>ملاحظة (اختياري)</label><input type="text" id="f-note" placeholder="أي ملاحظة إضافية"></div>
+      <div class="modal-btns"><button class="btn-cancel" onclick="closeModal()">إلغاء</button><button class="btn-save" onclick="saveEntry()">حفظ <i class="fa-solid fa-check"></i></button></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="shareModalOverlay" onclick="closeShareModalOutside(event)">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-solid fa-share-nodes"></i> <span id="shareModalTitle">مشاركة آمنة</span></div>
+      <p style="font-size:13px; color:var(--text2); margin-bottom:16px;" id="shareEntryName">مشاركة كلمة المرور</p>
+      <div class="share-options">
+        <div class="share-option"><label><i class="fa-regular fa-clock"></i> <span id="expiryLabel">مدة الصلاحية</span></label><select id="shareExpiry"><option value="1">1 ساعة</option><option value="24" selected>24 ساعة</option><option value="168">7 أيام</option><option value="720">30 يوم</option></select></div>
+        <div class="share-option"><label><i class="fa-solid fa-lock"></i> <span id="extraPasswordLabel">حماية إضافية (اختياري)</span></label><input type="password" id="shareExtraPassword" placeholder="كلمة مرور إضافية للرابط"></div>
+      </div>
+      <div class="share-link-box" id="shareLinkBox" style="display:none;"><input type="text" id="shareLinkInput" readonly><button class="icon-btn" onclick="copyShareLink()"><i class="fa-regular fa-copy"></i></button></div>
+      <div class="modal-btns"><button class="btn-cancel" onclick="closeShareModal()">إلغاء</button><button class="btn-save" id="createShareBtn" onclick="createSecureShare()"><i class="fa-solid fa-link"></i> <span id="createShareText">إنشاء رابط</span></button></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="changeMasterModal" onclick="closeChangeMasterModalOutside(event)">
+    <div class="modal">
+      <div class="modal-title"><i class="fa-solid fa-key"></i> تغيير كلمة المرور الرئيسية</div>
+      <div class="field"><label>كلمة المرور الحالية</label><input type="password" id="currentMasterPassword" placeholder="أدخل كلمة المرور الحالية" autocomplete="off"></div>
+      <div class="field"><label>كلمة المرور الجديدة</label><input type="password" id="newMasterPassword" placeholder="أدخل كلمة المرور الجديدة" autocomplete="off"></div>
+      <div class="field"><label>تأكيد كلمة المرور الجديدة</label><input type="password" id="confirmMasterPassword" placeholder="أعد إدخال كلمة المرور الجديدة" autocomplete="off"></div>
+      <div class="modal-btns"><button class="btn-cancel" onclick="closeChangeMasterModal()">إلغاء</button><button class="btn-save" onclick="changeMasterPassword()">تغيير <i class="fa-solid fa-check"></i></button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <!-- ملفات JavaScript -->
+  <script src="lang.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
