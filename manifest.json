@@ -1,1 +1,19 @@
 
+{
+  "name": "Clavis - مدير كلمات المرور الأسطوري",
+  "short_name": "Clavin",
+  "description": "مدير كلمات مرور متكامل - توليد، فحص، تدقيق أمني، وخزينة آمنة",
+  "start_url": "/Clavin/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#080c10",
+  "theme_color": "#00d4aa",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
